@@ -1,0 +1,24 @@
+{
+  "name": "@workspace/fb-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Facebook Messenger Group Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
+    "@dongdev/fca-unofficial": "^4.0.3",
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.16.1",
+    "gif-encoder-2": "^1.0.5",
+    "google-tts-api": "^2.0.2",
+    "jimp": "^1.6.1",
+    "openai": "^6.39.0",
+    "play-dl": "^1.9.7",
+    "sharp": "^0.35.1",
+    "youtube-sr": "^4.3.12"
+  }
+}
