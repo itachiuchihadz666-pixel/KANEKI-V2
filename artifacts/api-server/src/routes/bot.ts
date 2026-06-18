@@ -209,35 +209,55 @@ router.post("/bot/engine", async (req, res) => {
 // ============ GitHub Push ============
 router.post("/bot/github-push", async (req, res) => {
   const { repoOwner, repoName, commitMessage = "Bot update via dashboard" } = req.body as { repoOwner: string; repoName: string; commitMessage?: string };
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return res.status(400).json({ error: "GITHUB_TOKEN not configured" });
+
+  // Check env var first, then stored keys
+  let token = process.env.GITHUB_TOKEN || "";
+  if (!token) {
+    try {
+      const keysFile = path.join(process.cwd(), "artifacts/api-server/ai-keys.json");
+      if (fs.existsSync(keysFile)) {
+        const stored = JSON.parse(fs.readFileSync(keysFile, "utf8")) as { github?: string };
+        if (stored.github) token = stored.github;
+      }
+    } catch {}
+  }
+  if (!token) return res.status(400).json({ error: "لم يتم إعداد GitHub Token. أضفه من صفحة Deploy." });
   if (!repoOwner || !repoName) return res.status(400).json({ error: "repoOwner and repoName required" });
 
-  const botDir = path.join(process.cwd(), "../../artifacts/fb-bot");
-  const filesToPush = ["index.js", "package.json", "generate-uptime-image.js"];
+  const ROOT = process.cwd();
+  const filesToPush: { file: string; ghPath: string }[] = [
+    { file: path.join(ROOT, "artifacts/fb-bot/index.js"),                                     ghPath: "artifacts/fb-bot/index.js" },
+    { file: path.join(ROOT, "artifacts/fb-bot/package.json"),                                  ghPath: "artifacts/fb-bot/package.json" },
+    { file: path.join(ROOT, "artifacts/api-server/src/routes/ai.ts"),                          ghPath: "artifacts/api-server/src/routes/ai.ts" },
+    { file: path.join(ROOT, "artifacts/api-server/src/routes/bot.ts"),                         ghPath: "artifacts/api-server/src/routes/bot.ts" },
+    { file: path.join(ROOT, "artifacts/bot-dashboard/src/components/ui/card.tsx"),             ghPath: "artifacts/bot-dashboard/src/components/ui/card.tsx" },
+    { file: path.join(ROOT, "artifacts/bot-dashboard/src/index.css"),                          ghPath: "artifacts/bot-dashboard/src/index.css" },
+    { file: path.join(ROOT, "artifacts/bot-dashboard/src/App.tsx"),                            ghPath: "artifacts/bot-dashboard/src/App.tsx" },
+    { file: path.join(ROOT, "artifacts/bot-dashboard/src/pages/github-deploy.tsx"),            ghPath: "artifacts/bot-dashboard/src/pages/github-deploy.tsx" },
+    { file: path.join(ROOT, "artifacts/bot-dashboard/src/pages/ai-assistant.tsx"),             ghPath: "artifacts/bot-dashboard/src/pages/ai-assistant.tsx" },
+    { file: path.join(ROOT, "artifacts/bot-dashboard/src/pages/image-ai.tsx"),                 ghPath: "artifacts/bot-dashboard/src/pages/image-ai.tsx" },
+  ];
   const pushed: string[] = [];
   const failed: string[] = [];
 
   const ghHeaders = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github.v3+json", "Content-Type": "application/json" };
 
-  for (const fileName of filesToPush) {
-    const filePath = path.join(botDir, fileName);
-    if (!fs.existsSync(filePath)) { failed.push(fileName); continue; }
+  for (const { file, ghPath } of filesToPush) {
+    if (!fs.existsSync(file)) { failed.push(ghPath); continue; }
     try {
-      const content = Buffer.from(fs.readFileSync(filePath)).toString("base64");
-      // Check if file exists to get SHA
+      const content = Buffer.from(fs.readFileSync(file)).toString("base64");
       let sha: string | undefined;
       try {
-        const check = await axios.get(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${fileName}`, { headers: ghHeaders });
+        const check = await axios.get(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${ghPath}`, { headers: ghHeaders });
         sha = (check.data as { sha: string }).sha;
       } catch {}
-      await axios.put(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${fileName}`, {
+      await axios.put(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${ghPath}`, {
         message: commitMessage, content, ...(sha ? { sha } : {})
       }, { headers: ghHeaders });
-      pushed.push(fileName);
+      pushed.push(ghPath);
     } catch (e: unknown) {
-      failed.push(fileName);
-      req.log?.warn?.({ err: e }, `Failed to push ${fileName}`);
+      failed.push(ghPath);
+      req.log?.warn?.({ err: e }, `Failed to push ${ghPath}`);
     }
   }
 
