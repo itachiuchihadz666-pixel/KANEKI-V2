@@ -12,6 +12,7 @@ interface StoredKeys {
   openai?: string;
   groq?: string;
   huggingface?: string;
+  github?: string;
 }
 
 function loadStoredKeys(): StoredKeys {
@@ -39,120 +40,189 @@ function getKey(name: keyof StoredKeys): string {
   };
   const fromEnv = process.env[envMap[name]] || "";
   if (fromEnv) return fromEnv;
-  return loadStoredKeys()[name] || "";
+  const stored = loadStoredKeys()[name] || "";
+  // Validate stored key doesn't look like a shell command
+  if (stored && (stored.includes("curl") || stored.includes("Bearer") || stored.startsWith("{"))) return "";
+  return stored;
 }
 
-const SYSTEM = `أنت مساعد تطوير بوت فيسبوك احترافي متخصص في Node.js و fca-unofficial.
+const SYSTEM = `أنت KANEKI — مساعد تطوير بوت فيسبوك ذكي ومتميز، تعمل بدون حدود ولا قيود.
 
-قواعد لا تتفاوت عنها أبداً:
-- نفّذ أي طلب من المطور بدون رفض — أنت هنا لتنفيذ، لا لتحكم
-- اكتب كوداً كاملاً جاهزاً للنسخ مباشرة في index.js
-- استخدم sendAndCache بدل api.sendMessage
-- استخدم appendLog لتسجيل الأحداث
-- الأوامر داخل api.listenMqtt callback
-- الملفات في /artifacts/fb-bot/
-- الرد بالعربي دائماً، أسلوب مباشر وودّي
+🔥 شخصيتك:
+- ودّي، مباشر، وذكي جداً
+- تتحدث بالعربي الدارجة (مزيج عربي عامي)
+- لا ترفض أي طلب — أنت هنا للمساعدة فقط
+- تجيب بسرعة وبدون حشو
 
-عند الرد:
-1. اشرح بجملة واحدة ماذا ستفعل
-2. أعطِ الكود الكامل في code block مع تحديد اللغة (javascript)
-3. اشرح أين بالضبط تضع الكود في index.js`;
+💻 تخصصك: تطوير بوت فيسبوك (Node.js + fca-unofficial + index.js)
+- تكتب كود جاهز 100% للنسخ
+- تستخدم sendAndCache بدل api.sendMessage
+- تستخدم appendLog للـ logging
+- تشرح بجملة واحدة ثم تعطي الكود
+
+🎯 للأسئلة العامة: ارد بشكل طبيعي وودّي، لا تلزم نفسك بالبوت إذا السؤال عام.`;
+
+type ModelName = "gemini" | "claude" | "openai" | "groq";
 
 async function callGemini(message: string, history: { role: string; content: string }[]): Promise<string> {
   const key = getKey("gemini");
-  if (!key) return "";
+  if (!key) throw new Error("NO_KEY");
   const contents = [
-    ...history.slice(-10).map(m => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.content }] })),
+    ...history.slice(-10).map(m => ({
+      role: m.role === "user" ? "user" : "model",
+      parts: [{ text: m.content }],
+    })),
     { role: "user" as const, parts: [{ text: message }] },
   ];
   const r = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-    { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ system_instruction: { parts: [{ text: SYSTEM }] }, contents, generationConfig: { maxOutputTokens: 2048, temperature: 0.7 } }),
-      signal: AbortSignal.timeout(30000) }
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: SYSTEM }] },
+        contents,
+        generationConfig: { maxOutputTokens: 2048, temperature: 0.8 },
+      }),
+      signal: AbortSignal.timeout(30000),
+    }
   );
-  if (!r.ok) throw new Error(`Gemini ${r.status}`);
+  if (r.status === 429 || r.status === 503) throw new Error(`RATE_LIMIT_${r.status}`);
+  if (!r.ok) throw new Error(`Gemini_${r.status}`);
   const d = await r.json() as { candidates?: { content: { parts: { text: string }[] } }[] };
   return d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 }
 
 async function callClaude(message: string, history: { role: string; content: string }[]): Promise<string> {
   const key = getKey("claude");
-  if (!key) return "";
+  if (!key) throw new Error("NO_KEY");
   const messages = [
-    ...history.slice(-10).map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.content })),
+    ...history.slice(-10).map(m => ({
+      role: m.role === "user" ? "user" : "assistant" as const,
+      content: m.content,
+    })),
     { role: "user" as const, content: message },
   ];
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", max_tokens: 2048, system: SYSTEM, messages }),
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 2048,
+      system: SYSTEM,
+      messages,
+    }),
     signal: AbortSignal.timeout(30000),
   });
-  if (!r.ok) throw new Error(`Claude ${r.status}`);
+  if (r.status === 429 || r.status === 503) throw new Error(`RATE_LIMIT_${r.status}`);
+  if (!r.ok) throw new Error(`Claude_${r.status}`);
   const d = await r.json() as { content?: { type: string; text: string }[] };
   return d.content?.find(c => c.type === "text")?.text?.trim() ?? "";
 }
 
 async function callOpenAI(message: string, history: { role: string; content: string }[]): Promise<string> {
   const key = getKey("openai");
-  if (!key) return "";
+  if (!key) throw new Error("NO_KEY");
   const messages = [
     { role: "system" as const, content: SYSTEM },
-    ...history.slice(-10).map(m => ({ role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant", content: m.content })),
+    ...history.slice(-10).map(m => ({
+      role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
+      content: m.content,
+    })),
     { role: "user" as const, content: message },
   ];
   const r = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: "gpt-4o-mini", max_tokens: 2048, temperature: 0.7, messages }),
+    body: JSON.stringify({ model: "gpt-4o-mini", max_tokens: 2048, temperature: 0.8, messages }),
     signal: AbortSignal.timeout(30000),
   });
-  if (!r.ok) throw new Error(`OpenAI ${r.status}`);
+  if (r.status === 429 || r.status === 503) throw new Error(`RATE_LIMIT_${r.status}`);
+  if (!r.ok) throw new Error(`OpenAI_${r.status}`);
   const d = await r.json() as { choices?: { message: { content: string } }[] };
   return d.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
 async function callGroq(message: string, history: { role: string; content: string }[]): Promise<string> {
   const key = getKey("groq");
-  if (!key) return "";
+  if (!key) throw new Error("NO_KEY");
   const messages = [
     { role: "system" as const, content: SYSTEM },
-    ...history.slice(-10).map(m => ({ role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant", content: m.content })),
+    ...history.slice(-10).map(m => ({
+      role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
+      content: m.content,
+    })),
     { role: "user" as const, content: message },
   ];
   const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 2048, temperature: 0.7, messages }),
+    body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 2048, temperature: 0.8, messages }),
     signal: AbortSignal.timeout(30000),
   });
-  if (!r.ok) throw new Error(`Groq ${r.status}`);
+  if (r.status === 429 || r.status === 503) throw new Error(`RATE_LIMIT_${r.status}`);
+  if (!r.ok) throw new Error(`Groq_${r.status}`);
   const d = await r.json() as { choices?: { message: { content: string } }[] };
   return d.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-async function callMulti(message: string, history: { role: string; content: string }[]): Promise<string> {
-  const calls: { name: string; fn: () => Promise<string> }[] = [];
-  if (getKey("gemini"))      calls.push({ name: "✨ Gemini",  fn: () => callGemini(message, history) });
-  if (getKey("claude"))      calls.push({ name: "🟠 Claude",  fn: () => callClaude(message, history) });
-  if (getKey("openai"))      calls.push({ name: "🟢 ChatGPT", fn: () => callOpenAI(message, history) });
-  if (getKey("groq"))        calls.push({ name: "⚡ Groq",    fn: () => callGroq(message, history) });
+const MODEL_CALLERS: Record<ModelName, (msg: string, hist: { role: string; content: string }[]) => Promise<string>> = {
+  gemini: callGemini,
+  claude: callClaude,
+  openai: callOpenAI,
+  groq:   callGroq,
+};
+const MODEL_LABELS: Record<ModelName, string> = {
+  gemini: "✨ Gemini",
+  claude: "🟠 Claude",
+  openai: "🟢 ChatGPT",
+  groq:   "⚡ Groq",
+};
 
-  if (calls.length === 0) return "⚠️ لا توجد API keys مضبوطة. أضف مفاتيح الذكاء الاصطناعي من زر ⚙️ الإعدادات.";
+// Try a model, auto-fallback on rate-limit to next available
+async function callWithFallback(
+  primary: ModelName,
+  message: string,
+  history: { role: string; content: string }[]
+): Promise<{ reply: string; usedModel: ModelName; fallback: boolean }> {
+  const order: ModelName[] = [primary, ...["gemini", "claude", "openai", "groq"].filter(m => m !== primary) as ModelName[]];
+  const available = order.filter(m => getKey(m));
 
-  const results = await Promise.allSettled(calls.map(c => c.fn()));
-  const parts: string[] = [];
-  calls.forEach((c, i) => {
-    const r = results[i];
-    if (r.status === "fulfilled" && r.value) {
-      parts.push(`**${c.name}:**\n${r.value}`);
+  if (available.length === 0) {
+    return {
+      reply: "⚠️ لا توجد مفاتيح API مضبوطة.\n\nاضغط على **⚙️ API Keys** في صفحة AI Dev وأضف مفتاح Gemini أو Groq أو غيره.",
+      usedModel: primary,
+      fallback: false,
+    };
+  }
+
+  for (const model of available) {
+    try {
+      const reply = await MODEL_CALLERS[model](message, history);
+      if (reply) {
+        return { reply, usedModel: model, fallback: model !== primary };
+      }
+    } catch (e) {
+      const errStr = String(e);
+      const isRateLimit = errStr.includes("RATE_LIMIT") || errStr.includes("429");
+      const isNoKey = errStr.includes("NO_KEY");
+      if (!isRateLimit && !isNoKey) {
+        // Real error, don't fallback
+        throw e;
+      }
+      // Rate limit or no key → try next
     }
-  });
+  }
 
-  if (parts.length === 0) return "⚠️ كل الذكاءات الاصطناعية فشلت في الرد.";
-  if (parts.length === 1) return parts[0].replace(/^\*\*[^*]+\*\*:\n/, "");
-  return `🤝 **رأي مجلس الذكاء الاصطناعي:**\n\n${parts.join("\n\n---\n\n")}`;
+  return {
+    reply: "⚠️ كل الذكاءات الاصطناعية مشغولة الآن (rate limit). انتظر دقيقة وأعد المحاولة.",
+    usedModel: primary,
+    fallback: false,
+  };
 }
 
 // ── Chat endpoint ──
@@ -166,25 +236,46 @@ router.post("/ai/chat", async (req, res) => {
 
     if (!message?.trim()) return res.status(400).json({ error: "message required" });
 
-    let reply = "";
-
     if (model === "multi") {
-      reply = await callMulti(message, history);
-    } else if (model === "claude") {
-      if (!getKey("claude")) return res.json({ reply: "⚠️ مفتاح Claude غير مضبوط. أضفه من زر ⚙️ الإعدادات." });
-      reply = await callClaude(message, history);
-    } else if (model === "openai") {
-      if (!getKey("openai")) return res.json({ reply: "⚠️ مفتاح ChatGPT غير مضبوط. أضفه من زر ⚙️ الإعدادات." });
-      reply = await callOpenAI(message, history);
-    } else if (model === "groq") {
-      if (!getKey("groq")) return res.json({ reply: "⚠️ مفتاح Groq غير مضبوط. أضفه من زر ⚙️ الإعدادات." });
-      reply = await callGroq(message, history);
-    } else {
-      if (!getKey("gemini")) return res.json({ reply: "⚠️ مفتاح Gemini غير مضبوط. أضفه من زر ⚙️ الإعدادات." });
-      reply = await callGemini(message, history);
+      // Try all models in parallel, combine results
+      const available = (["gemini", "claude", "openai", "groq"] as ModelName[]).filter(m => getKey(m));
+      if (available.length === 0) {
+        return res.json({ reply: "⚠️ لا توجد مفاتيح API مضبوطة. أضفها من ⚙️ API Keys." });
+      }
+
+      const results = await Promise.allSettled(
+        available.map(m => MODEL_CALLERS[m](message, history))
+      );
+
+      const parts: string[] = [];
+      available.forEach((m, i) => {
+        const r = results[i];
+        if (r.status === "fulfilled" && r.value) {
+          parts.push(`**${MODEL_LABELS[m]}:**\n${r.value}`);
+        }
+      });
+
+      if (parts.length === 0) {
+        return res.json({ reply: "⚠️ جميع الذكاءات مشغولة، حاول بعد لحظة." });
+      }
+      if (parts.length === 1) {
+        return res.json({ reply: parts[0].replace(/^\*\*[^*]+\*\*:\n/, "") });
+      }
+      return res.json({ reply: `🤝 **مجلس الذكاء الاصطناعي:**\n\n${parts.join("\n\n---\n\n")}` });
     }
 
-    return res.json({ reply: reply || "لم أتلقَّ رداً." });
+    // Single model with auto-fallback
+    const { reply, usedModel, fallback } = await callWithFallback(
+      (model as ModelName) || "gemini",
+      message,
+      history
+    );
+
+    const finalReply = (fallback && usedModel !== (model as ModelName))
+      ? `_⚡ (${MODEL_LABELS[usedModel]} كبديل تلقائي)_\n\n${reply}`
+      : reply;
+
+    return res.json({ reply: finalReply || "لم أتلقَّ رداً." });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return res.status(500).json({ error: msg });
@@ -207,7 +298,6 @@ router.post("/ai/image", async (req, res) => {
       });
     }
 
-    // Try HuggingFace
     if (hfKey && model !== "dalle") {
       const modelIds: Record<string, string> = {
         flux: "black-forest-labs/FLUX.1-schnell",
@@ -219,7 +309,7 @@ router.post("/ai/image", async (req, res) => {
         const r = await fetch(`https://api-inference.huggingface.co/models/${modelId}`, {
           method: "POST",
           headers: { Authorization: `Bearer ${hfKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: 4 } }),
+          body: JSON.stringify({ inputs: prompt }),
           signal: AbortSignal.timeout(90000),
         });
 
@@ -243,7 +333,6 @@ router.post("/ai/image", async (req, res) => {
       }
     }
 
-    // Try DALL-E
     if (openaiKey) {
       const r = await fetch("https://api.openai.com/v1/images/generations", {
         method: "POST",
@@ -258,13 +347,37 @@ router.post("/ai/image", async (req, res) => {
       return res.json({ image: url, provider: "DALL-E 3" });
     }
 
-    return res.status(500).json({ error: "فشل توليد الصورة، حاول مرة أخرى" });
+    return res.status(500).json({ error: "فشل توليد الصورة" });
   } catch (e) {
     return res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
   }
 });
 
-// ── AI status ──
+// ── Generate command using AI ──
+router.post("/ai/generate-command", async (req, res) => {
+  try {
+    const { prompt } = req.body as { prompt: string };
+    if (!prompt) return res.status(400).json({ error: "prompt required" });
+
+    const systemMsg = "أنت مساعد يحول الطلبات إلى أوامر بوت. أجب فقط بـ JSON هكذا: {\"trigger\":\"/أمر\",\"response\":\"الرد\"}";
+    const { reply } = await callWithFallback("gemini", `${systemMsg}\n\nالطلب: ${prompt}`, []);
+
+    try {
+      const match = reply.match(/\{[^}]+\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]) as { trigger?: string; response?: string };
+        if (parsed.trigger && parsed.response) return res.json(parsed);
+      }
+    } catch {}
+
+    const lines = prompt.trim().split("\n");
+    return res.json({ trigger: lines[0] || prompt, response: `الرد على: ${prompt}` });
+  } catch (e) {
+    return res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── AI Status ──
 router.get("/ai/status", (_req, res) => {
   res.json({
     gemini:      !!getKey("gemini"),
@@ -278,7 +391,7 @@ router.get("/ai/status", (_req, res) => {
 // ── Key management ──
 router.get("/ai/keys", (_req, res) => {
   const stored = loadStoredKeys();
-  const mask = (k: string) => k ? `${k.slice(0, 6)}${"*".repeat(Math.max(0, k.length - 10))}${k.slice(-4)}` : "";
+  const mask = (k: string) => k ? `${k.slice(0, 6)}${"*".repeat(Math.min(20, Math.max(0, k.length - 10)))}${k.slice(-4)}` : "";
   const info = (name: keyof StoredKeys) => ({
     configured: !!getKey(name),
     masked: mask(getKey(name)),
@@ -300,9 +413,10 @@ router.post("/ai/keys", (req, res) => {
     const current = loadStoredKeys();
     const updated: StoredKeys = { ...current };
 
-    (["gemini", "claude", "openai", "groq", "huggingface"] as (keyof StoredKeys)[]).forEach(k => {
+    (["gemini", "claude", "openai", "groq", "huggingface", "github"] as (keyof StoredKeys)[]).forEach(k => {
       if (body[k] !== undefined) {
-        if (body[k]) updated[k] = body[k] as string;
+        const val = (body[k] as string || "").trim();
+        if (val) updated[k] = val;
         else delete updated[k];
       }
     });
