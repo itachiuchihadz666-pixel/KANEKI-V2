@@ -381,6 +381,101 @@ pre {
 }
 
 /* ══════════════════════════════════════
+   GLOBAL RGB — Nav sidebar & all surfaces
+══════════════════════════════════════ */
+
+/* Sidebar active button glow */
+.nav-active {
+  box-shadow: 0 0 12px 2px rgba(var(--rgb-c1), 0.25);
+}
+
+/* Table / list rows hover */
+tr:hover td, [role="row"]:hover {
+  background: rgba(var(--rgb-c1), 0.04);
+}
+
+/* Badges and pills */
+.badge, [data-slot="badge"] {
+  border-color: rgba(var(--rgb-c1), 0.4);
+}
+
+/* Dialog/Sheet/Popover overlay glow */
+[data-slot="dialog-content"],
+[data-slot="sheet-content"],
+[role="dialog"] {
+  border: 1px solid rgba(var(--rgb-c1), 0.3) !important;
+  animation: rgb-sweep var(--rgb-speed, 2.5s) ease-in-out infinite;
+  box-shadow:
+    0 0 40px rgba(var(--rgb-c1), 0.1),
+    0 20px 60px rgba(0,0,0,0.8) !important;
+}
+
+/* ALL page section headings */
+h2, h3 {
+  text-shadow: 0 0 20px rgba(var(--rgb-c1), 0.15);
+}
+
+/* Code blocks */
+pre {
+  border: 1px solid rgba(var(--rgb-c1), 0.25) !important;
+  box-shadow: 0 0 16px rgba(var(--rgb-c1), 0.08);
+}
+
+/* Select dropdowns */
+select {
+  border-color: rgba(var(--rgb-c1), 0.3) !important;
+}
+
+/* Separator lines */
+hr, [data-slot="separator"] {
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(var(--rgb-c1), 0.3),
+    rgba(var(--rgb-c2), 0.3),
+    transparent) !important;
+  border: none !important;
+  height: 1px !important;
+}
+
+/* Textarea */
+textarea {
+  border-color: rgba(var(--rgb-c1), 0.25) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+textarea:focus {
+  border-color: rgb(var(--rgb-c1)) !important;
+  box-shadow:
+    0 0 0 1px rgba(var(--rgb-c1), 0.3),
+    0 0 16px rgba(var(--rgb-c1), 0.12) !important;
+}
+
+/* Input */
+input {
+  border-color: rgba(var(--rgb-c1), 0.25) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+input:focus {
+  border-color: rgb(var(--rgb-c1)) !important;
+  box-shadow:
+    0 0 0 1px rgba(var(--rgb-c1), 0.3),
+    0 0 16px rgba(var(--rgb-c1), 0.12) !important;
+}
+
+/* Top bar glow line */
+header {
+  border-bottom: 1px solid rgba(var(--rgb-c1), 0.15) !important;
+}
+
+/* Stat number glow effect */
+@keyframes stat-glow {
+  0%, 100% { text-shadow: 0 0 10px rgba(var(--rgb-c1), 0.4); }
+  50% { text-shadow: 0 0 18px rgba(var(--rgb-c2), 0.5); }
+}
+.font-mono.text-3xl, .font-mono.text-2xl {
+  animation: stat-glow 3s ease-in-out infinite;
+}
+
+/* ══════════════════════════════════════
    SIDEBAR FOOTER RGB STRIP
 ══════════════════════════════════════ */
 @keyframes rgb-strip {
