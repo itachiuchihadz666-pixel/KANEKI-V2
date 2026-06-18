@@ -476,6 +476,87 @@ header {
 }
 
 /* ══════════════════════════════════════
+   MOBILE — HarmonyOS Touch UX
+══════════════════════════════════════ */
+
+/* Safe area support for notch phones */
+:root {
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Smooth momentum scrolling on iOS */
+* { -webkit-tap-highlight-color: transparent; }
+.overflow-y-auto { -webkit-overflow-scrolling: touch; }
+
+/* Touch feedback — HarmonyOS ripple feel */
+button, [role="button"] {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Mobile cards: more compact */
+@media (max-width: 767px) {
+  /* Tighter card padding on mobile */
+  [class*="p-6"] { padding: 1rem !important; }
+  [class*="p-5"] { padding: 0.875rem !important; }
+
+  /* Larger touch targets */
+  button { min-height: 36px; }
+
+  /* Full-width inputs on mobile */
+  input, textarea, select { font-size: 16px !important; }
+
+  /* Stats cards: 2 columns on phone */
+  .lg\\:grid-cols-5 { grid-template-columns: repeat(2, 1fr) !important; }
+  .md\\:grid-cols-2 { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Dashboard grid: single column */
+  .lg\\:grid-cols-3 { grid-template-columns: 1fr !important; }
+  .lg\\:grid-cols-2 { grid-template-columns: 1fr !important; }
+  .md\\:grid-cols-3 { grid-template-columns: 1fr !important; }
+
+  /* Compact font sizes on mobile */
+  .text-3xl { font-size: 1.5rem !important; }
+  .text-2xl  { font-size: 1.25rem !important; }
+
+  /* Hide heavy decorative icons on mobile */
+  .transform.rotate-12 { display: none !important; }
+}
+
+/* HarmonyOS floating elements */
+@keyframes harmony-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-3px); }
+}
+.harmony-float { animation: harmony-float 3s ease-in-out infinite; }
+
+/* Bottom nav spring animation */
+@keyframes nav-spring {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.9); }
+  70%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+/* HarmonyOS card shine effect */
+@keyframes card-shine {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.harmony-shine {
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255,255,255,0.04) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  animation: card-shine 4s ease-in-out infinite;
+}
+
+/* ══════════════════════════════════════
    SIDEBAR FOOTER RGB STRIP
 ══════════════════════════════════════ */
 @keyframes rgb-strip {
